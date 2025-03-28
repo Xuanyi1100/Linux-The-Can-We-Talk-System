@@ -6,7 +6,7 @@ TARGET = bin/chat-server
 all: $(TARGET)
 
 $(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) -lpthread
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) -lpthread -lncurses
 
 clean:
 	rm -f $(TARGET)

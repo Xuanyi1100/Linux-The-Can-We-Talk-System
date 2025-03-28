@@ -1,5 +1,0 @@
-snprintf(sender_info, BUFFER_SIZE + FORMAT_SIZE, 
-        "%-15s  [%-5s] << %s",  // -15 = left-align in 15-char width, -5 = left-align in 5-char width
-        client_list[i].ip,
-        client_list[i].userID,                      
-        message); 

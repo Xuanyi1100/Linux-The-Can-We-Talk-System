@@ -11,7 +11,7 @@
 
 #define PORT 8080
 #define BUFFER_SIZE 40
-#define FORMAT_SIZE 68
+#define FORMAT_SIZE 69
 
 typedef struct
 {
@@ -44,29 +44,29 @@ void broadcast_message(char *message, int sender_socket)
 {
     pthread_mutex_lock(&client_list_mutex);
     // Find sender info
-    char sender_info[FORMAT_SIZE] = {0};  // Initialize to zero;
+    char sender_info[FORMAT_SIZE] = {0}; // Initialize to zero;
 
     for (int i = 0; i < client_count; i++)
     {
         if (client_list[i].socket_fd == sender_socket)
         {
-            //snprintf() always adds a null terminator (\0) at the end, that's why + 1
-            snprintf(sender_info, FORMAT_SIZE + 1, 
-                    "%-15s [%-5s] << %-40s ", 
-                    client_list[i].ip,
-                    client_list[i].userID,                      
-                    message);
+            // snprintf() always adds a null terminator (\0) at the end
+            snprintf(sender_info, FORMAT_SIZE,
+                     "%-15s [%-5s] << %-40s ",
+                     client_list[i].ip,
+                     client_list[i].userID,
+                     message);
             break;
         }
     }
-    
+
     // Send formatted message to all clients
     for (int i = 0; i < client_count; i++)
     {
         if (client_list[i].socket_fd != sender_socket)
         {
             // +1 make sure \0 is sent, so the printf in client could find where to end
-            send(client_list[i].socket_fd, sender_info, strlen(sender_info)+1, 0);
+            send(client_list[i].socket_fd, sender_info, strlen(sender_info) + 1, 0);
         }
     }
     pthread_mutex_unlock(&client_list_mutex);
@@ -174,11 +174,19 @@ int main(void)
     }
 
     // Set socket options to reuse address and port
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
     {
-        perror("setsockopt");
+        perror("setsockopt SO_REUSEADDR");
         exit(EXIT_FAILURE);
     }
+
+#ifdef __linux__
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0)
+    {
+        perror("setsockopt SO_REUSEPORT");
+        exit(EXIT_FAILURE);
+    }
+#endif
 
     // Make socket non-blocking
     fcntl(server_fd, F_SETFL, O_NONBLOCK);
