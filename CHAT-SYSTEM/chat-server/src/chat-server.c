@@ -11,7 +11,7 @@
 
 #define PORT 8080
 #define BUFFER_SIZE 40
-#define FORMAT_SIZE 69
+#define FORMAT_SIZE 68 // doesn't matter if iit's 68 or 70
 
 typedef struct
 {
@@ -52,7 +52,7 @@ void broadcast_message(char *message, int sender_socket)
         {
             // snprintf() always adds a null terminator (\0) at the end
             snprintf(sender_info, FORMAT_SIZE,
-                     "%-15s [%-5s] << %-40s ",
+                     "%-15s [%-5s] << %-40s",
                      client_list[i].ip,
                      client_list[i].userID,
                      message);

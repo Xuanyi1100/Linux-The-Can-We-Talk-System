@@ -16,10 +16,11 @@
 #include <ctype.h>
 
 #define PORT 8080
-#define BUFFER_SIZE 69
+#define BUFFER_SIZE 68 // will eat 1 of 127 when it's 69
 #define MESSAGE_SIZE 81
 #define DEFAULT_SERVER "127.0.0.1" // Default server if none provided
 #define DISPLAY_MESSAGE_SIZE 89
+#define SINGLE_MESSAGE_SIZE 40
 
 // Global variable declarations
 volatile int client_running = 1;
@@ -100,6 +101,22 @@ int main(int argc, char *argv[])
 
     printf("Connected to server at %s:%d\n", server_name, PORT);
 
+    // Get client's own IP address
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    if (getsockname(sock, (struct sockaddr *)&client_addr, &addr_len) == -1)
+    {
+        perror("getsockname failed");
+        close(sock);
+        return EXIT_FAILURE;
+    }
+
+    // Convert binary IP to string
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
+    printf("Client IP: %s\n", client_ip); // Optional debug
+
     // First send userID to register with server
     char reg_message[20] = {0};
     sprintf(reg_message, "USER:%s", userID);
@@ -174,8 +191,76 @@ int main(int argc, char *argv[])
             break;
         }
 
-        //??? prevent user input more than 80
         send(sock, message, strlen(message), 0);
+
+        // format self message:
+        char timestamp[20];
+        time_t rawtime;
+        struct tm timeinfo;
+        // Get current time
+        time(&rawtime);
+        localtime_r(&rawtime, &timeinfo);
+        strftime(timestamp, sizeof(timestamp), "(%H:%M:%S)", &timeinfo);
+
+        if (strlen(message) < SINGLE_MESSAGE_SIZE)
+        {
+            char selfmessage[DISPLAY_MESSAGE_SIZE];
+            snprintf(selfmessage, DISPLAY_MESSAGE_SIZE,
+                     "%-15s [%-5s] >> %-40s %s",
+                     client_ip,
+                     userID,
+                     message,
+                     timestamp);
+            display_win(msg_win, selfmessage, row, shouldBlank);
+            row++;
+        }
+        else
+        {
+
+            // Split into two chunks (max 80 chars input)
+            char chunk1[SINGLE_MESSAGE_SIZE + 1];
+            char chunk2[SINGLE_MESSAGE_SIZE + 1];
+
+            // First chunk (40 chars)
+            strncpy(chunk1, message, SINGLE_MESSAGE_SIZE);
+            chunk1[SINGLE_MESSAGE_SIZE] = '\0';
+
+            // Second chunk (remaining chars)
+            int remaining = strlen(message) - SINGLE_MESSAGE_SIZE;
+            if (remaining > 0)
+            {
+                strncpy(chunk2, message + SINGLE_MESSAGE_SIZE, remaining);
+                chunk2[remaining] = '\0';
+            }
+            else
+            {
+                chunk2[0] = '\0'; // Empty second chunk
+            }
+
+            // Display first chunk
+            char selfmessage[DISPLAY_MESSAGE_SIZE];
+            snprintf(selfmessage, DISPLAY_MESSAGE_SIZE,
+                     "%-15s [%-5s] >> %-40s %s",
+                     client_ip,
+                     userID,
+                     chunk1,
+                     timestamp);
+            display_win(msg_win, selfmessage, row, shouldBlank);
+            row++;
+
+            // Display second chunk if not empty
+            if (remaining > 0)
+            {
+                snprintf(selfmessage, DISPLAY_MESSAGE_SIZE,
+                         "%-15s [%-5s] >> %-40s %s",
+                         client_ip,
+                         userID,
+                         chunk2,
+                         timestamp);
+                display_win(msg_win, selfmessage, row, shouldBlank);
+                row++;
+            }
+        }
     }
 
     client_running = 0;                 // Signal receive thread to exit
@@ -228,7 +313,7 @@ void *receive_messages(void *socket_ptr)
             display_win(msg_win, message, row, shouldBlank);
             row++;
 
-            // Reset row if exceeding window height
+            // Reset row if exceeding window height???
             int max_row;
             // getmaxyx(msg_win, max_row, NULL);
             if (row >= max_row - 1)
@@ -268,7 +353,7 @@ void input_win(WINDOW *win, char *word)
     wmove(win, row, col);        // Start input after prompt
     wrefresh(win);
     // Read input character-by-character
-    while ((ch = wgetch(win)) != '\n' && ch != KEY_ENTER )
+    while ((ch = wgetch(win)) != '\n' && ch != KEY_ENTER)
     {
         if ((ch == KEY_BACKSPACE || ch == 127) && i > 0)
         {
@@ -282,12 +367,15 @@ void input_win(WINDOW *win, char *word)
         }
         else if (isprint(ch) && col < maxcol - 1)
         {
-            if (i < MESSAGE_SIZE - 1 ) {
+            if (i < MESSAGE_SIZE - 1)
+            {
                 word[i++] = ch;
                 waddch(win, ch);
                 col++;
-            } else {
-                flash();  // Visual feedback instead of beep()
+            }
+            else
+            {
+                flash(); // Visual feedback instead of beep()
             }
         }
         wrefresh(win);
@@ -300,8 +388,8 @@ void display_win(WINDOW *win, char *word, int whichRow, int shouldBlank)
     if (shouldBlank == 1)
         blankWin(win);             /* make it a clean window */
     wmove(win, (whichRow + 1), 1); /* position cusor at approp row */
-    wprintw(win, "%s", word);    // Add newline to trigger scrolling
-    box(win, 0, 0);   // Redraw borders
+    wprintw(win, "%s", word);      // Add newline to trigger scrolling
+    box(win, 0, 0);                // Redraw borders
     wrefresh(win);
 } /* display_win */
 
