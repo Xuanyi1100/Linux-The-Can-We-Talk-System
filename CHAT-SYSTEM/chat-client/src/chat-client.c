@@ -14,9 +14,10 @@
 #include <time.h>
 #include <locale.h>
 #include <ctype.h>
+#include <poll.h>
 
 #define PORT 8080
-#define BUFFER_SIZE 68 // will eat 1 of 127 when it's 69
+#define BUFFER_SIZE 68 // will eat 1 of 127 when it's 69???
 #define MESSAGE_SIZE 81
 #define DEFAULT_SERVER "127.0.0.1" // Default server if none provided
 #define DISPLAY_MESSAGE_SIZE 89
@@ -27,6 +28,7 @@ volatile int client_running = 1;
 WINDOW *chat_win, *msg_win;
 int shouldBlank = 0;
 int row = 0;
+char server_ip[16];
 
 // Function prototypes
 void destroy_win(WINDOW *win);
@@ -98,7 +100,8 @@ int main(int argc, char *argv[])
         perror("Connection Failed");
         return EXIT_FAILURE;
     }
-
+    // Convert server IP to string
+    inet_ntop(AF_INET, &serv_addr.sin_addr, server_ip, INET_ADDRSTRLEN);
     printf("Connected to server at %s:%d\n", server_name, PORT);
 
     // Get client's own IP address
@@ -177,7 +180,7 @@ int main(int argc, char *argv[])
     }
     // Chat loop
     char message[MESSAGE_SIZE] = {0};
-    while (1)
+    while (client_running)
     {
         // Clear previous message
         wclear(chat_win);
@@ -191,8 +194,6 @@ int main(int argc, char *argv[])
             break;
         }
 
-        send(sock, message, strlen(message), 0);
-
         // format self message:
         char timestamp[20];
         time_t rawtime;
@@ -202,6 +203,9 @@ int main(int argc, char *argv[])
         localtime_r(&rawtime, &timeinfo);
         strftime(timestamp, sizeof(timestamp), "(%H:%M:%S)", &timeinfo);
 
+        send(sock, message, strlen(message), 0);
+
+        // parcel the message
         if (strlen(message) < SINGLE_MESSAGE_SIZE)
         {
             char selfmessage[DISPLAY_MESSAGE_SIZE];
@@ -285,58 +289,79 @@ void *receive_messages(void *socket_ptr)
     struct tm timeinfo;
     char timestamp[20];
 
-    // Set socket to non-blocking
-    int flags = fcntl(sock, F_GETFL, 0);
-    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+    struct pollfd pfd = {
+        .fd = sock,
+        .events = POLLIN | POLLERR | POLLHUP // Monitor for data/errors
+    };
 
     while (client_running)
     {
         // Clear buffer
         memset(buffer, 0, BUFFER_SIZE);
-
-        // Receive message from server
-        int valread = read(sock, buffer, BUFFER_SIZE);
-        if (valread > 0)
+        int ret = poll(&pfd, 1, 100); // 100ms timeout
+        if (ret < 0)
         {
+            perror("poll failed");
+            client_running = 0;
+            break;
+        }
+        else if (ret == 0)
+        {
+            continue; // Timeout - check again
+        }
+
+        // Handle errors/hangups
+        if (pfd.revents & (POLLERR | POLLHUP))
+        {
+            client_running = 0;
+            break;
+        }
+
+        // Handle incoming data
+        if (pfd.revents & POLLIN)
+        {
+            ssize_t valread = recv(sock, buffer, BUFFER_SIZE, 0);
             // Get current time
             time(&rawtime);
             localtime_r(&rawtime, &timeinfo);
             strftime(timestamp, sizeof(timestamp), "(%H:%M:%S)", &timeinfo);
 
-            // Print received message
-            // printf("\r%s %s\n>> ", buffer, timestamp);  // Print only received bytes
-            // fflush(stdout); // Ensure output is displayed immediately
-            char message[DISPLAY_MESSAGE_SIZE];
-            snprintf(message, DISPLAY_MESSAGE_SIZE, "%s %s", buffer, timestamp);
-
-            // Display message and increment row
-            display_win(msg_win, message, row, shouldBlank);
-            row++;
-
-            // Reset row if exceeding window height???
-            int max_row;
-            // getmaxyx(msg_win, max_row, NULL);
-            if (row >= max_row - 1)
-            {                    // -1 to account for borders
-                row = 1;         // Reset to top row
-                shouldBlank = 1; // Optional: Clear window when resetting
+            if (valread <= 0)
+            { // Connection closed or error
+                client_running = 0;
+                char serverDownMessage[DISPLAY_MESSAGE_SIZE];
+                snprintf(serverDownMessage, DISPLAY_MESSAGE_SIZE,
+                         "%-15s [ sys ] << %-40s %s",
+                         server_ip,
+                         "Server is down.",
+                         timestamp);
+                display_win(msg_win, serverDownMessage, row, shouldBlank);
+                row++;
+                // wgetch(msg_win); // Wait for any key press;
+                break;
             }
-        }
-        if (valread < 0)
-        {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            if (valread > 0)
             {
-                // No data available, sleep a bit and check client_running again
-                usleep(100000); // 100ms
-                continue;
+
+                char message[DISPLAY_MESSAGE_SIZE];
+                snprintf(message, DISPLAY_MESSAGE_SIZE, "%s %s", buffer, timestamp);
+
+                // Display message and increment row
+                display_win(msg_win, message, row, shouldBlank);
+                row++;
+
+                // Reset row if exceeding window height???
+                int max_row;
+                // getmaxyx(msg_win, max_row, NULL);
+                if (row >= max_row - 1)
+                {                    // -1 to account for borders
+                    row = 1;         // Reset to top row
+                    shouldBlank = 1; // Optional: Clear window when resetting
+                }
             }
-            // Actual error
-            printf("\nError reading from server\n");
-            client_running = 0;
-            break;
         }
     }
-    destroy_win(msg_win);
+    client_running = 0;
     return NULL;
 }
 
