@@ -1,4 +1,21 @@
-
+/*
+ * File: chat_client.c
+ * Date: 2025-03-29
+ * Sp_04
+ * Group member: Deyi, Zhizheng
+ * Description: A terminal-based chat client application using sockets and ncurses.
+ * Features: Real-time messaging, multi-threaded architecture (input/output handling),
+ *           custom user IDs, server connection management, and message timestamping.
+ * 
+ * Key Components:
+ * - Connects to a chat server via TCP/IP
+ * - Uses ncurses for terminal UI with separate chat and message windows
+ * - Supports command-line arguments for user ID and server address
+ * - Implements message splitting for long inputs
+ * - Handles server disconnections gracefully
+ * 
+ * Usage: ./client --user<ID> --server<IP_or_hostname>
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +54,20 @@ void display_win(WINDOW *win, char *word, int whichRow, int shouldBlank);
 void blankWin(WINDOW *win);
 void *receive_messages(void *socket_ptr);
 
+/**
+ * Main function - Entry point for the chat client
+ * 
+ * Handles:
+ * - Command-line argument parsing (--user and --server)
+ * - Socket creation and server connection
+ * - Ncurses UI initialization with two windows (input and messages)
+ * - Message input handling and transmission
+ * - Clean shutdown on exit command or server disconnect
+ * 
+ * @param argc Argument count
+ * @param argv Command-line arguments (--user<ID> --server<address>)
+ * @return Exit status (EXIT_SUCCESS or EXIT_FAILURE)
+ */
 int main(int argc, char *argv[])
 {
     int sock = 0;
@@ -281,6 +312,19 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+/**
+ * Receives messages from server in a dedicated thread
+ * 
+ * Continuously monitors socket for incoming data using poll()
+ * Handles:
+ * - Server disconnections
+ * - Message formatting with timestamps
+ * - Updating message display window
+ * - Automatic window scrolling and content management
+ * 
+ * @param socket_ptr Pointer to client socket file descriptor
+ * @return NULL when thread exits
+ */
 void *receive_messages(void *socket_ptr)
 {
     int sock = *((int *)socket_ptr);
@@ -408,6 +452,7 @@ void input_win(WINDOW *win, char *word)
     word[i] = '\0'; // Null-terminate
 } /* input_win */
 
+// display the word to window
 void display_win(WINDOW *win, char *word, int whichRow, int shouldBlank)
 {
     if (shouldBlank == 1)
@@ -418,11 +463,13 @@ void display_win(WINDOW *win, char *word, int whichRow, int shouldBlank)
     wrefresh(win);
 } /* display_win */
 
+//delete window
 void destroy_win(WINDOW *win)
 {
     delwin(win);
 } /* destory_win */
 
+// clear window
 void blankWin(WINDOW *win)
 {
     int i;
